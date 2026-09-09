@@ -50,7 +50,7 @@ import shutil
 import zipfile
 
 PACK_FORMAT = 88          # 26.2, from the server jar's version.json
-VERSION = "1.0.0"
+VERSION = "1.0.1"
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -151,12 +151,18 @@ def build():
     models = SRC / "assets" / "minecraft" / "models" / "block"
     models.mkdir(parents=True)
 
+    # 26.x reads min_format/max_format. The older supported_formats array is not
+    # enough on its own - a pack carrying only pack_format + supported_formats
+    # shows up as "incompatible or broken" in the selection screen even when the
+    # number is right. Every pack that loads on 26.2 declares min/max, and some
+    # carry no pack_format at all, so these two are what the client goes by.
     (SRC / "pack.mcmeta").write_text(json.dumps({
         "pack": {
-            "pack_format": PACK_FORMAT,
-            "supported_formats": [PACK_FORMAT, 999],
             "description": "GlassFrame " + VERSION
                            + "§7 - frame outside, seamless inside. No mods.",
+            "pack_format": PACK_FORMAT,
+            "min_format": PACK_FORMAT,
+            "max_format": 2147483647,
         }
     }, indent=2) + "\n")
 

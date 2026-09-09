@@ -3,7 +3,7 @@
 A connected-glass resource pack for Minecraft Java 26.2 that needs **no mods**.
 A glass wall reads as one clear sheet with a frame only around its outer rim.
 
-Download: [`GlassFrame-1.0.0.zip`](GlassFrame-1.0.0.zip) — 14 KB, models only.
+Download: [`GlassFrame-1.0.1.zip`](GlassFrame-1.0.1.zip) — 14 KB, models only.
 
 ## Why most connected-glass packs do nothing
 
