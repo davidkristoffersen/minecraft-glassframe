@@ -82,7 +82,7 @@ import shutil
 import zipfile
 
 PACK_FORMAT = 88          # 26.2, from the client's version.json
-VERSION = "2.4.0"
+VERSION = "2.5.0"
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -249,7 +249,15 @@ def pane_template(spec):
 # installed client, so nothing is vendored into the repo that Mojang did not
 # already put on this machine, and the pack still builds without it.
 
-SPECK_ALPHA = 77         # out of 255, so 30%
+SPECK_ALPHA = 77         # out of 255, so 30% - blocks
+PANE_SPECK_ALPHA = 128   # 50% - panes, which need more to read the same
+
+# A pane is a far smaller piece of glass than a block face, so at equal alpha it
+# simply carries fewer flecks and all but disappears. Sampling the sprite more
+# densely would fix the count but shrink each fleck, so instead panes get their
+# own copy of the texture with the flecks left stronger. Only clear glass needs
+# it; stained panes are already 40-61% in their own textures.
+PANE_TEXTURE = "glassframe_pane"
 CLIENT_JAR = pathlib.Path.home() / (
     "Library/Application Support/minecraft/versions/26.2/26.2.jar")
 
@@ -304,24 +312,33 @@ def _png_encode(w, h, rows):
 
 
 def fade_specks(models_dir):
-    """Write a glass texture whose opaque flecks are half transparent. Returns True
-    if it was written, False if the client jar was not there to read from."""
+    """Write the two glass textures, flecks toned down - the block one and the pane
+    one, which keeps them stronger. False if the client jar was not there to read."""
     import zipfile
     if not CLIENT_JAR.exists():
         return False
     with zipfile.ZipFile(CLIENT_JAR) as jar:
-        w, h, rows = _png_decode(jar.read("assets/minecraft/textures/block/glass.png"))
-    # everything opaque comes down to half: the flecks, and the border ring too,
-    # which the models never sample but which would otherwise be the one hard
-    # edge left if anything ever did
-    for y in range(h):
-        for x in range(w):
-            if rows[y][x * 4 + 3] > SPECK_ALPHA:
-                rows[y][x * 4 + 3] = SPECK_ALPHA
+        source = jar.read("assets/minecraft/textures/block/glass.png")
     out = models_dir.parent.parent / "textures" / "block"
     out.mkdir(parents=True, exist_ok=True)
-    (out / "glass.png").write_bytes(_png_encode(w, h, rows))
+    for name, ceiling in (("glass", SPECK_ALPHA), (PANE_TEXTURE, PANE_SPECK_ALPHA)):
+        w, h, rows = _png_decode(source)
+        # everything opaque comes down: the flecks, and the border ring too, which
+        # the models never sample but which would be the one hard edge left if
+        # anything ever did
+        for y in range(h):
+            for x in range(w):
+                if rows[y][x * 4 + 3] > ceiling:
+                    rows[y][x * 4 + 3] = ceiling
+        (out / f"{name}.png").write_bytes(_png_encode(w, h, rows))
     return True
+
+
+# The concrete models for CLEAR glass panes, repointed at the pane texture. Vanilla
+# sets "pane" on these, not on the templates, so a template cannot change it - the
+# child always wins. Stained panes are left alone and keep their own colours.
+PANE_MODELS = ["glass_pane_post", "glass_pane_side", "glass_pane_side_alt",
+               "glass_pane_noside", "glass_pane_noside_alt"]
 
 
 def build(mode="borderless", version=None):
@@ -360,6 +377,13 @@ def build(mode="borderless", version=None):
             (models / f"{name}.json").write_text(
                 json.dumps(pane_template(spec), indent=1) + "\n")
         written += len(PANE_TEMPLATES)
+        for name in PANE_MODELS:
+            (models / f"{name}.json").write_text(json.dumps({
+                "parent": f"minecraft:block/template_{name}",
+                "textures": {"pane": {"force_translucent": True,
+                                      "sprite": f"minecraft:block/{PANE_TEXTURE}"}},
+            }, indent=1) + "\n")
+        written += len(PANE_MODELS)
 
     if mode in ("borderless", "rim", "rimtop") and not fade_specks(models):
         print("  (client jar not found - shipping without the faded speck texture)")
