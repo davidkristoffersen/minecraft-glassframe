@@ -82,7 +82,7 @@ import shutil
 import zipfile
 
 PACK_FORMAT = 88          # 26.2, from the client's version.json
-VERSION = "2.3.0"
+VERSION = "2.4.0"
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -189,27 +189,35 @@ def block_model(texture, mode):
 # from block/glass_pane_top. The cap is culled by a solid neighbour but not by
 # another pane, so it is exactly the dark line between two connected panes.
 # UVs stay inside the sprite (1..15) so the border ring never shows either.
+def texel(unit):
+    """Where a point on a block face lands in the texture, once the border ring is
+    skipped: 16 units of surface across 14 texels. Panes are mapped at the same rate,
+    so a fleck is the same size on a pane as on a block - sampling a pane's 7-unit arm
+    across 7 texels instead drew them 14% smaller, which is most of why panes looked
+    fainter than blocks even at identical alpha."""
+    return round(1 + unit * 14 / 16, 4)
+
+
 PANE_TEMPLATES = {
     "template_glass_pane_post": {
         "from": [7, 0, 7], "to": [9, 16, 9],
-        "faces": {"north": [7, 1, 9, 15], "south": [7, 1, 9, 15],
-                  "west": [7, 1, 9, 15], "east": [7, 1, 9, 15]},
+        "faces": {"north": (7, 9), "south": (7, 9), "west": (7, 9), "east": (7, 9)},
     },
     "template_glass_pane_side": {
         "from": [7, 0, 0], "to": [9, 16, 7],
-        "faces": {"west": [1, 1, 8, 15], "east": [1, 1, 8, 15]},
+        "faces": {"west": (0, 7), "east": (0, 7)},
     },
     "template_glass_pane_side_alt": {
         "from": [7, 0, 9], "to": [9, 16, 16],
-        "faces": {"west": [8, 1, 15, 15], "east": [8, 1, 15, 15]},
+        "faces": {"west": (9, 16), "east": (9, 16)},
     },
     "template_glass_pane_noside": {
         "from": [7, 0, 7], "to": [9, 16, 9],
-        "faces": {"north": [7, 1, 9, 15]},
+        "faces": {"north": (7, 9)},
     },
     "template_glass_pane_noside_alt": {
         "from": [7, 0, 7], "to": [9, 16, 9],
-        "faces": {"south": [7, 1, 9, 15]},
+        "faces": {"south": (7, 9)},
     },
 }
 
@@ -219,8 +227,11 @@ def pane_template(spec):
         "textures": {"particle": "#pane"},
         "elements": [{
             "from": spec["from"], "to": spec["to"],
-            "faces": {side: {"uv": uv, "texture": "#pane"}
-                      for side, uv in spec["faces"].items()},
+            # across = the arm's own span, down = the full height of the block
+            "faces": {side: {"uv": [texel(across[0]), texel(0),
+                                    texel(across[1]), texel(16)],
+                             "texture": "#pane"}
+                      for side, across in spec["faces"].items()},
         }],
     }
 
@@ -228,15 +239,17 @@ def pane_template(spec):
 # ---------------------------------------------------------------- the specks
 # Clear glass carries a few fully opaque flecks in the middle of its texture. With
 # the border gone they are the only thing left on a sheet, and at alpha 255 they
-# read as hard white chips against glass that is otherwise invisible. Faded to
-# half, they still catch the light without drawing the eye.
+# read as hard white chips against glass that is otherwise invisible. At 30% they
+# still catch the light without drawing the eye. This is the only thing setting
+# how strong they are: blocks and panes sample the same texture at the same rate
+# (see texel()), so whatever this says, both shapes agree.
 #
 # This is the one texture the pack ships. Stained glass needs nothing: its interior
 # is already 40-61% alpha, well under half. The vanilla texture is read from the
 # installed client, so nothing is vendored into the repo that Mojang did not
 # already put on this machine, and the pack still builds without it.
 
-SPECK_ALPHA = 128        # out of 255
+SPECK_ALPHA = 77         # out of 255, so 30%
 CLIENT_JAR = pathlib.Path.home() / (
     "Library/Application Support/minecraft/versions/26.2/26.2.jar")
 
