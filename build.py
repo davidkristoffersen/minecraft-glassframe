@@ -1,47 +1,78 @@
 #!/usr/bin/env python3
 """
-Build GlassFrame: a connected-glass resource pack that needs no mods.
+Build GlassFrame: glass that joins up, with no mods.
 
-The problem it solves
----------------------
-Vanilla decides whether to draw a face by asking "does the neighbour occlude
-this side?". Stone and glass both answer yes, so a resource pack can never ask
-"is my neighbour glass?" - which is why every good-looking connected-glass pack
-on the internet requires OptiFine or Continuity, and does nothing without them.
+Why a frame around the rim is not possible
+------------------------------------------
+Vanilla draws a face unless the neighbour occludes it. Stone and glass both
+occlude, so a resource pack can never ask "is my neighbour glass?" - which is
+why nearly every connected-glass pack ships an assets/minecraft/optifine/ctm
+folder and does nothing at all without OptiFine or Continuity.
 
-What CAN be done is choose, per quad, WHICH neighbour the occlusion test looks
-at: a model face may carry a `cullface` pointing in a different direction than
-the face itself. That is the whole trick here.
+You can pick, per quad, WHICH neighbour the test looks at: a face may carry a
+`cullface` pointing elsewhere than it faces (vanilla does this itself in 52
+model faces, chorus_plant being the known one). That lets a 1px border strip on
+the north face be erased by the block to the WEST, so a wall's front reads as
+one sheet with a frame only on its rim.
 
-Each glass block is drawn as, per side:
+It still does not work, and test_culling.py proves why. A strip needs two
+conditions at once - "my side is visible" AND "the surface does not continue
+this way" - and a quad can test one. Whichever condition you keep, the strip
+turns up as a seam in some other orientation: the frame that outlines a wall is
+the same geometry that streaks a floor, one axis over. Checked across a floor
+and both wall orientations, all 24 strips are a seam in at least one of them and
+none survives all three.
 
-  * one centre quad, inset 1px, culled by its own direction - so two glass
-    blocks facing each other still merge, exactly like vanilla.
-  * four 1px border strips along the edges of that side, each culled by the
-    neighbour it runs along. The strip on the west edge of the north face is
-    culled by the block to the WEST, so a glass block beside this one removes
-    the line and a wall reads as one sheet, while the outside edge of the wall
-    keeps its frame.
+So the only glass vanilla can draw with no seams anywhere is glass with no
+border anywhere. That is what BORDERLESS builds, and why every pack that
+actually looks clean on a vanilla client is a borderless one.
 
-The pack every other "vanilla connected glass" ships culls those border strips
-by the direction they face instead, which is why a wall keeps a visible line at
-every join - the neighbour beside you never removes a quad pointing forwards.
+Why the rim cannot also hide under glass
+----------------------------------------
+A rim strip is culled by the block BESIDE it, so it vanishes when two slabs are
+pushed together. Hiding it under another glass block as well needs a second
+test - no glass above AND no glass beside - and that cannot be built.
 
-Known limit (unavoidable, one cullface per quad)
-------------------------------------------------
-A quad can test one neighbour, but a border strip really wants two conditions:
-"my side is visible" AND "the wall does not continue this way". We keep the
-second. So inside a glass volume 2+ blocks deep, the shared faces still draw
-their border strips, visible as faint outlines through the glass. Single
-thickness windows and walls - the reason anyone installs this - are exact.
+The visible geometry is a union of quads, and each quad is gated by exactly one
+"this neighbour does not occlude me" test. A union is an OR. The rim wants an
+AND of two such tests, and no arrangement of quads expresses one: adding more
+quads only ever adds more ways for something to appear. Even hiding a quad
+behind an opaque one buys a term of the form "this neighbour DOES occlude",
+never a second negative - and glass is transparent, so there is nothing to hide
+behind anyway.
 
-Panes are deliberately untouched. A pane's blockstate says "connected" for a
-neighbouring pane and for solid stone alike, so removing its frame removes it
-against dirt too. Vanilla pane behaviour is the closest thing to correct.
+The consequence: a stack of glass slabs outlines every layer, not just the top.
+Culling the rim by the block above instead of the one beside inverts the
+problem - only the top layer is outlined, but every block in it draws its own
+box, which is the grid this pack exists to remove. Drawing the outline only
+where it belongs needs to know both neighbours at once, which on a vanilla
+client only a plugin can do, by placing display entities along the edge.
 
-No textures are shipped: the models sample the vanilla glass texture, the inner
-16x16 area for the centre and the 1px border ring for the strips, so the pack
-follows whatever other texture pack is loaded above it.
+The builds
+----------
+rim         the default. Clear glass everywhere, with the border kept on the
+            two flat sides only, so a glass floor or roof is outlined at its
+            edge while every upright side stays perfectly clear. Both of those
+            strips run sideways, which is what keeps them off the hidden faces
+            between two floor blocks. The cost is a tall wall: its up and down
+            sides are hidden between stacked blocks, yet their strips face out
+            of the wall and nothing there can cull them, so a wall more than one
+            block high keeps faint level lines.
+borderless  no border at all, anywhere. The only build with zero seams in every
+            orientation, and the only one a solid glass cube renders nothing
+            inside.
+frame       border strips on all six sides, culled by the neighbour they run
+            towards. Clean on a wall seen head on, streaked everywhere else.
+            Kept as the evidence for the paragraph above.
+cleanfloor  frame, minus the strips along the upright edges.
+
+rim and borderless also rebuild the five vanilla pane templates without their
+#edge pieces - the top rail and the end cap drawn from block/glass_pane_top.
+The cap is culled by a solid neighbour but never by another pane, so it is
+exactly the dark line between two connected panes.
+
+No textures are shipped in any build - the models sample the vanilla glass
+sprite - so another texture pack layered on top still shows through.
 """
 
 import json
@@ -49,8 +80,8 @@ import pathlib
 import shutil
 import zipfile
 
-PACK_FORMAT = 88          # 26.2, from the server jar's version.json
-VERSION = "1.0.1"
+PACK_FORMAT = 88          # 26.2, from the client's version.json
+VERSION = "2.2.0"
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -60,11 +91,6 @@ COLOURS = ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink",
            "gray", "light_gray", "cyan", "purple", "blue", "brown", "green",
            "red", "black"]
 
-# Per side: the axis it sits on, its outward direction, and the four lateral
-# neighbours whose presence should erase the border strip on that edge.
-#   plane      - (axis, coordinate) of the face
-#   into       - +1/-1: which way is "into the block" along that axis
-#   laterals   - lateral direction -> (axis, near_edge) the strip runs along
 SIDES = {
     "north": {"axis": "z", "at": 0,  "into": +1},
     "south": {"axis": "z", "at": 16, "into": -1},
@@ -74,9 +100,6 @@ SIDES = {
     "down":  {"axis": "y", "at": 0,  "into": +1},
 }
 
-# The two in-plane axes for each side, and which direction sits at the low and
-# high end of each. The first pair is drawn flush, the second pair 0.1px deeper,
-# so the quads that meet at a corner never land on the same plane.
 IN_PLANE = {
     "north": [("x", "west", "east"), ("y", "down", "up")],
     "south": [("x", "west", "east"), ("y", "down", "up")],
@@ -87,7 +110,7 @@ IN_PLANE = {
 }
 
 AXES = ["x", "y", "z"]
-CORNER_OFFSET = 0.1       # px, keeps corner quads off each other's plane
+CORNER_OFFSET = 0.1
 
 
 def _point(axis_values):
@@ -95,11 +118,9 @@ def _point(axis_values):
 
 
 def _element(side, spans, depth, uv, cullface):
-    """One flat quad on `side`, spanning `spans` in the two in-plane axes."""
     cfg = SIDES[side]
     coord = cfg["at"] + cfg["into"] * depth
-    low = dict(spans)
-    high = dict(spans)
+    low, high = dict(spans), dict(spans)
     for axis in spans:
         low[axis], high[axis] = spans[axis]
     low[cfg["axis"]] = high[cfg["axis"]] = coord
@@ -110,56 +131,116 @@ def _element(side, spans, depth, uv, cullface):
     }
 
 
-def side_elements(side):
-    """Centre quad plus the four border strips for one side of the cube."""
+def side_elements(side, mode):
     (a1, a1_low, a1_high), (a2, a2_low, a2_high) = IN_PLANE[side]
+    # A face with no border at all: the whole side, sampling only the inside of
+    # the texture so the ring never appears. Culled by its own side, exactly as
+    # vanilla glass is, so two sheets facing each other still merge.
+    plain = [_element(side, {a1: (0, 16), a2: (0, 16)}, 0, [1, 1, 15, 15], side)]
+    if mode == "borderless":
+        return plain
+    if mode in ("rim", "rimtop"):
+        # Border kept on the two flat sides only, so a glass floor or roof is
+        # outlined while every upright side stays clear. Both of these strips
+        # run sideways, which is what keeps them off the hidden faces between
+        # two floor blocks. The cost is a wall: its up and down sides are hidden
+        # between stacked blocks, yet their strips face out of the wall and no
+        # neighbour there can cull them, so a tall wall keeps faint level lines.
+        if side not in ("up", "down"):
+            return plain
+        # rimtop outlines the top only. A floating slab seen from above
+        # otherwise shows its underside rim through the glass as a second line
+        # a block below the first - the doubled outline. The cost is a glass
+        # roof seen from below, which then has no outline at all.
+        if mode == "rimtop" and side == "down":
+            return plain
     out = [
-        # the clear middle: merges with the neighbour on this side, like vanilla
         _element(side, {a1: (1, 15), a2: (1, 15)}, 0, [1, 1, 15, 15], side),
-        # strips along a1: erased by the neighbour they run towards
         _element(side, {a1: (0, 1), a2: (0, 16)}, 0, [0, 0, 1, 16], a1_low),
         _element(side, {a1: (15, 16), a2: (0, 16)}, 0, [15, 0, 16, 16], a1_high),
-        # strips along a2, set a hair deeper so the corners do not z-fight
-        _element(side, {a1: (0, 16), a2: (0, 1)}, CORNER_OFFSET, [0, 15, 16, 16], a2_low),
-        _element(side, {a1: (0, 16), a2: (15, 16)}, CORNER_OFFSET, [0, 0, 16, 1], a2_high),
     ]
+    if mode in ("frame", "rim", "rimtop") or side in ("up", "down"):
+        out += [
+            _element(side, {a1: (0, 16), a2: (0, 1)}, CORNER_OFFSET, [0, 15, 16, 16], a2_low),
+            _element(side, {a1: (0, 16), a2: (15, 16)}, CORNER_OFFSET, [0, 0, 16, 1], a2_high),
+        ]
     return out
 
 
-def block_model(texture):
+def block_model(texture, mode):
     elements = []
     for side in SIDES:
-        elements.extend(side_elements(side))
+        elements.extend(side_elements(side, mode))
     return {
-        # block/block only for the inventory display transforms; the cube itself
-        # is ours. Vanilla reaches it through cube_all -> cube -> block.
         "parent": "minecraft:block/block",
         "textures": {
             "particle": texture,
-            # vanilla glass and stained glass both carry force_translucent in
-            # 26.2 (block/glass.json); without it the block lands in the wrong
-            # render pass and sorts against water and other glass incorrectly
+            # vanilla glass carries force_translucent in 26.2; without it the
+            # block lands in the wrong render pass
             "glass": {"force_translucent": True, "sprite": texture},
         },
         "elements": elements,
     }
 
 
-def build():
+# The five vanilla pane templates, rebuilt with only their #pane faces. What is
+# dropped are the #edge pieces: the top and bottom rail and the end cap, drawn
+# from block/glass_pane_top. The cap is culled by a solid neighbour but not by
+# another pane, so it is exactly the dark line between two connected panes.
+# UVs stay inside the sprite (1..15) so the border ring never shows either.
+PANE_TEMPLATES = {
+    "template_glass_pane_post": {
+        "from": [7, 0, 7], "to": [9, 16, 9],
+        "faces": {"north": [7, 1, 9, 15], "south": [7, 1, 9, 15],
+                  "west": [7, 1, 9, 15], "east": [7, 1, 9, 15]},
+    },
+    "template_glass_pane_side": {
+        "from": [7, 0, 0], "to": [9, 16, 7],
+        "faces": {"west": [1, 1, 8, 15], "east": [1, 1, 8, 15]},
+    },
+    "template_glass_pane_side_alt": {
+        "from": [7, 0, 9], "to": [9, 16, 16],
+        "faces": {"west": [8, 1, 15, 15], "east": [8, 1, 15, 15]},
+    },
+    "template_glass_pane_noside": {
+        "from": [7, 0, 7], "to": [9, 16, 9],
+        "faces": {"north": [7, 1, 9, 15]},
+    },
+    "template_glass_pane_noside_alt": {
+        "from": [7, 0, 7], "to": [9, 16, 9],
+        "faces": {"south": [7, 1, 9, 15]},
+    },
+}
+
+
+def pane_template(spec):
+    return {
+        "textures": {"particle": "#pane"},
+        "elements": [{
+            "from": spec["from"], "to": spec["to"],
+            "faces": {side: {"uv": uv, "texture": "#pane"}
+                      for side, uv in spec["faces"].items()},
+        }],
+    }
+
+
+def build(mode="borderless", version=None):
+    version = version or VERSION
     if SRC.exists():
         shutil.rmtree(SRC)
     models = SRC / "assets" / "minecraft" / "models" / "block"
     models.mkdir(parents=True)
 
-    # 26.x reads min_format/max_format. The older supported_formats array is not
-    # enough on its own - a pack carrying only pack_format + supported_formats
-    # shows up as "incompatible or broken" in the selection screen even when the
-    # number is right. Every pack that loads on 26.2 declares min/max, and some
-    # carry no pack_format at all, so these two are what the client goes by.
+    label = {"rim": "clear glass, outlined on floors and roofs",
+             "rimtop": "clear glass, outlined on top only",
+             "borderless": "no borders, blocks and panes",
+             "frame": "frame on the rim (streaks - see the docstring)",
+             "cleanfloor": "for flat floors seen from above"}[mode]
+    # 26.x reads min_format/max_format; a pack with only pack_format plus the
+    # older supported_formats array shows as "incompatible or broken"
     (SRC / "pack.mcmeta").write_text(json.dumps({
         "pack": {
-            "description": "GlassFrame " + VERSION
-                           + "§7 - frame outside, seamless inside. No mods.",
+            "description": f"GlassFrame {version}§7 - {label}",
             "pack_format": PACK_FORMAT,
             "min_format": PACK_FORMAT,
             "max_format": 2147483647,
@@ -171,19 +252,31 @@ def build():
         names[f"{colour}_stained_glass"] = f"minecraft:block/{colour}_stained_glass"
     for name, texture in names.items():
         (models / f"{name}.json").write_text(
-            json.dumps(block_model(texture), indent=1) + "\n")
+            json.dumps(block_model(texture, mode), indent=1) + "\n")
+
+    written = len(names)
+    if mode in ("borderless", "rim", "rimtop"):
+        for name, spec in PANE_TEMPLATES.items():
+            (models / f"{name}.json").write_text(
+                json.dumps(pane_template(spec), indent=1) + "\n")
+        written += len(PANE_TEMPLATES)
 
     DIST.mkdir(exist_ok=True)
-    out = DIST / f"GlassFrame-{VERSION}.zip"
+    out = DIST / f"GlassFrame-{version}.zip"
     if out.exists():
         out.unlink()
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for path in sorted(SRC.rglob("*")):
             if path.is_file():
                 z.write(path, path.relative_to(SRC).as_posix())
-    return out, len(names)
+    return out, written
 
 
 if __name__ == "__main__":
-    path, count = build()
-    print(f"{path}  ({count} block models, {path.stat().st_size} bytes)")
+    for mode, name in (("rim", VERSION),
+                       ("rimtop", VERSION + "-toponly"),
+                       ("borderless", VERSION + "-borderless"),
+                       ("cleanfloor", VERSION + "-cleanfloor"),
+                       ("frame", VERSION + "-frame")):
+        path, count = build(mode, name)
+        print(f"{path.name:34} {count:2} models  {path.stat().st_size:6} bytes")

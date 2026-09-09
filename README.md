@@ -1,55 +1,52 @@
 # GlassFrame
 
-A connected-glass resource pack for Minecraft Java 26.2 that needs **no mods**.
-A glass wall reads as one clear sheet with a frame only around its outer rim.
+Glass with no borders for Minecraft Java 26.2, needing **no mods**. A window or a
+floor reads as one clean sheet instead of a grid of outlined squares. Blocks and
+panes both.
 
-Download: [`GlassFrame-1.0.1.zip`](GlassFrame-1.0.1.zip) — 14 KB, models only.
+Download: [`GlassFrame-2.2.0-borderless.zip`](GlassFrame-2.2.0-borderless.zip) - 10 KB, models only.
 
 ## Why most connected-glass packs do nothing
 
-Vanilla decides whether to draw a face by asking *"does the neighbour occlude
-this side?"*. Stone and glass both answer yes, so a resource pack can never ask
-*"is my neighbour glass?"*. That is why nearly every connected-glass pack ships
-an `assets/minecraft/optifine/ctm` folder and quietly does nothing at all
-without OptiFine or Continuity installed.
+Vanilla draws a face unless the neighbour occludes it. Stone and glass both
+occlude, so a resource pack can never ask *"is my neighbour glass?"*. That is why
+nearly every connected-glass pack ships an `assets/minecraft/optifine/ctm` folder
+and quietly does nothing at all without OptiFine or Continuity.
 
-## What this does instead
+## Why this one has no border rather than a clever one
 
-A model face may carry a `cullface` pointing somewhere other than the way the
-face itself points. Vanilla uses this in 52 of its own model faces
-(`chorus_plant` is the well known one). Each side of a glass block is drawn as:
+A model face may carry a `cullface` pointing somewhere other than the way it
+faces - vanilla does this itself in 52 model faces. That lets a border strip be
+erased by the neighbour beside it, which sounds like it should give a frame on
+the rim and nothing inside.
 
-* **one centre quad**, inset 1px, culled by its own direction — so two glass
-  blocks facing each other merge, exactly like vanilla;
-* **four 1px border strips** along that side's edges, each culled by the
-  neighbour it runs *towards*. The strip on the west edge of the north face is
-  culled by the block to the **west**, so glass beside this one erases the line
-  while the outside edge of the wall keeps its frame.
+It does not, and `test_culling.py` proves it. A strip needs two conditions at
+once, *my side is visible* **and** *the surface does not continue this way*, and
+a quad tests one. Whichever you keep, the strip reappears as a seam in some
+other orientation: the frame that outlines a wall is the same geometry that
+streaks a floor, one axis over. Checked across a floor and both wall
+orientations, all 24 strips are a seam in at least one of them, and none
+survives all three.
 
-The handful of genuine vanilla packs cull those strips by the direction they
-face, which is why a wall keeps a visible line at every join: the neighbour
-beside you never removes a quad that points forwards.
+So the border goes entirely. Six full faces sampling only the inside of the
+vanilla glass sprite, still culled against their own kind, so glass merges
+exactly as vanilla does. The five pane templates are rebuilt without their
+`#edge` pieces - the top rail and the end cap, which are precisely the dark line
+between two connected panes.
 
-No textures are shipped. The models sample the vanilla glass texture — the
-interior for the centre, the 1px border ring for the strips — so the pack sits
-happily on top of whatever other texture pack is loaded.
+No textures are shipped, only models, so another texture pack layered on top
+still shows through.
 
-## Known limits
+## Getting the outline back
 
-* **Glass 2+ blocks deep.** A quad tests one neighbour, but a border strip
-  really wants two conditions: *my side is visible* **and** *the wall does not
-  continue this way*. This keeps the second, so shared faces inside a solid
-  glass volume still draw their strips, seen as faint outlines through the
-  glass. Single-thickness windows and walls are exact.
-* **Glass meeting stone** loses its frame line at that seam, because stone
-  occludes exactly like glass does and the two cannot be told apart.
-* **Panes are untouched, on purpose.** A pane's blockstate reads "connected"
-  for a neighbouring pane and for solid dirt alike, so dropping its frame drops
-  it against dirt too. Vanilla pane behaviour is the closest thing to correct.
+An outline that appears only where the glass genuinely stops needs both
+neighbours known at once, which on a vanilla client only a server plugin can do.
+`test_rim_rule.py` holds that rule and the shapes it has to satisfy: a stack of
+slabs outlined on its top layer alone, no seam where two slabs meet, and a rim
+against dirt.
 
 ## Building
 
-`python3 build.py` writes `dist/`. `python3 test_culling.py` replays
-Minecraft's culling rule over the built models for a lone block, a 3x3 wall,
-glass against stone, a stacked column and mismatched stained glass, and asserts
-the wall's front comes out bare inside with an unbroken rim.
+`python3 build.py` writes `dist/` - the borderless build plus three others kept
+as evidence. `python3 test_culling.py` replays Minecraft's culling rule over the
+built models and asserts the results.
