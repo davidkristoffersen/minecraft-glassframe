@@ -71,8 +71,9 @@ rim and borderless also rebuild the five vanilla pane templates without their
 The cap is culled by a solid neighbour but never by another pane, so it is
 exactly the dark line between two connected panes.
 
-No textures are shipped in any build - the models sample the vanilla glass
-sprite - so another texture pack layered on top still shows through.
+The models sample the vanilla glass sprite rather than replacing it, so another
+texture pack layered on top still shows through. The one exception is glass.png
+itself, reissued with its opaque flecks at half alpha - see "the specks" below.
 """
 
 import json
@@ -81,7 +82,7 @@ import shutil
 import zipfile
 
 PACK_FORMAT = 88          # 26.2, from the client's version.json
-VERSION = "2.2.0"
+VERSION = "2.3.0"
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -224,6 +225,92 @@ def pane_template(spec):
     }
 
 
+# ---------------------------------------------------------------- the specks
+# Clear glass carries a few fully opaque flecks in the middle of its texture. With
+# the border gone they are the only thing left on a sheet, and at alpha 255 they
+# read as hard white chips against glass that is otherwise invisible. Faded to
+# half, they still catch the light without drawing the eye.
+#
+# This is the one texture the pack ships. Stained glass needs nothing: its interior
+# is already 40-61% alpha, well under half. The vanilla texture is read from the
+# installed client, so nothing is vendored into the repo that Mojang did not
+# already put on this machine, and the pack still builds without it.
+
+SPECK_ALPHA = 128        # out of 255
+CLIENT_JAR = pathlib.Path.home() / (
+    "Library/Application Support/minecraft/versions/26.2/26.2.jar")
+
+
+def _png_decode(data):
+    import struct, zlib
+    pos, idat = 8, b""
+    while pos < len(data):
+        ln = struct.unpack(">I", data[pos:pos + 4])[0]
+        typ, chunk = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + ln]
+        if typ == b"IHDR":
+            w, h, depth, colour = struct.unpack(">IIBB", chunk[:10])
+        elif typ == b"IDAT":
+            idat += chunk
+        pos += 12 + ln
+    if colour != 6 or depth != 8:
+        raise ValueError("expected 8-bit RGBA")
+    raw, stride, rows, prev, i = zlib.decompress(idat), w * 4, [], bytearray(w * 4), 0
+    for _ in range(h):
+        filt, line, i = raw[i], bytearray(raw[i + 1:i + 1 + stride]), i + 1 + stride
+        for x in range(stride):
+            a = line[x - 4] if x >= 4 else 0
+            b = prev[x]
+            c = prev[x - 4] if x >= 4 else 0
+            if filt == 1:
+                line[x] = (line[x] + a) & 255
+            elif filt == 2:
+                line[x] = (line[x] + b) & 255
+            elif filt == 3:
+                line[x] = (line[x] + (a + b) // 2) & 255
+            elif filt == 4:
+                p = a + b - c
+                pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
+                line[x] = (line[x] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
+        rows.append(bytearray(line))
+        prev = line
+    return w, h, rows
+
+
+def _png_encode(w, h, rows):
+    import struct, zlib, binascii
+    raw = b"".join(b"\x00" + bytes(r) for r in rows)
+
+    def chunk(tag, body):
+        return (struct.pack(">I", len(body)) + tag + body
+                + struct.pack(">I", binascii.crc32(tag + body) & 0xffffffff))
+
+    return (b"\x89PNG\r\n\x1a\n"
+            + chunk(b"IHDR", struct.pack(">IIBBBBB", w, h, 8, 6, 0, 0, 0))
+            + chunk(b"IDAT", zlib.compress(raw, 9))
+            + chunk(b"IEND", b""))
+
+
+def fade_specks(models_dir):
+    """Write a glass texture whose opaque flecks are half transparent. Returns True
+    if it was written, False if the client jar was not there to read from."""
+    import zipfile
+    if not CLIENT_JAR.exists():
+        return False
+    with zipfile.ZipFile(CLIENT_JAR) as jar:
+        w, h, rows = _png_decode(jar.read("assets/minecraft/textures/block/glass.png"))
+    # everything opaque comes down to half: the flecks, and the border ring too,
+    # which the models never sample but which would otherwise be the one hard
+    # edge left if anything ever did
+    for y in range(h):
+        for x in range(w):
+            if rows[y][x * 4 + 3] > SPECK_ALPHA:
+                rows[y][x * 4 + 3] = SPECK_ALPHA
+    out = models_dir.parent.parent / "textures" / "block"
+    out.mkdir(parents=True, exist_ok=True)
+    (out / "glass.png").write_bytes(_png_encode(w, h, rows))
+    return True
+
+
 def build(mode="borderless", version=None):
     version = version or VERSION
     if SRC.exists():
@@ -260,6 +347,9 @@ def build(mode="borderless", version=None):
             (models / f"{name}.json").write_text(
                 json.dumps(pane_template(spec), indent=1) + "\n")
         written += len(PANE_TEMPLATES)
+
+    if mode in ("borderless", "rim", "rimtop") and not fade_specks(models):
+        print("  (client jar not found - shipping without the faded speck texture)")
 
     DIST.mkdir(exist_ok=True)
     out = DIST / f"GlassFrame-{version}.zip"
