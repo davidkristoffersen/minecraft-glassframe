@@ -82,7 +82,7 @@ import shutil
 import zipfile
 
 PACK_FORMAT = 88          # 26.2, from the client's version.json
-VERSION = "2.6.0"
+VERSION = "2.7.0"
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -259,18 +259,6 @@ PANE_SPECK_ALPHA = 128   # 50% - panes, which need more to read the same
 # it; stained panes are already 40-61% in their own textures.
 PANE_TEXTURE = "glassframe_pane"
 
-# The outline bars GlassRim draws are display entities showing a stained glass block,
-# and a display entity has no alpha of its own - what you see is the block's texture.
-# With the bars widened to the pane's full 2px they take up noticeably more room, so
-# the stained glass textures are reissued at a fraction of their own alpha. Vanilla
-# stained glass runs 40-61% inside; at 0.65 of that it is nearer a quarter, which
-# reads as an outline rather than a rail. It applies to stained glass blocks in a
-# build too, which is the price of the bars having no alpha to set.
-BAR_ALPHA_SCALE = 0.65
-
-COLOURS_ALL = ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink",
-               "gray", "light_gray", "cyan", "purple", "blue", "brown", "green",
-               "red", "black"]
 CLIENT_JAR = pathlib.Path.home() / (
     "Library/Application Support/minecraft/versions/26.2/26.2.jar")
 
@@ -372,16 +360,11 @@ def fade_specks(models_dir):
                     rows[y][x * 4 + 3] = ceiling
         (out / f"{name}.png").write_bytes(_png_encode(w, h, rows))
 
-    # and every stained glass, thinned - this is what the outline bars are made of
-    with zipfile.ZipFile(CLIENT_JAR) as jar:
-        for colour in COLOURS_ALL:
-            sprite = f"{colour}_stained_glass"
-            w, h, rows = _png_decode(
-                jar.read(f"assets/minecraft/textures/block/{sprite}.png"))
-            for y in range(h):
-                for x in range(w):
-                    rows[y][x * 4 + 3] = int(rows[y][x * 4 + 3] * BAR_ALPHA_SCALE)
-            (out / f"{sprite}.png").write_bytes(_png_encode(w, h, rows))
+    # Stained glass is shipped untouched. 2.6.0 thinned all sixteen of them because
+    # the GlassRim bars were made of stained glass and a display entity has no alpha
+    # of its own - but a translucent display is drawn before the water pass and cuts
+    # a hole in everything translucent behind it, so the bars are opaque concrete now
+    # and the only thing this ever faded was real stained glass in people's builds.
     return True
 
 

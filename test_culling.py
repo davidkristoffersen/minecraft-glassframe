@@ -103,7 +103,11 @@ def main():
 
     panes = [n for n in (gf.SRC / "assets/minecraft/models/block").iterdir()
              if "pane" in n.name]
-    check("the five pane templates are rebuilt too", len(panes) == 5,
+    # five rebuilt templates, plus the five concrete clear-pane models that point
+    # `pane` at our own texture - vanilla sets that on the concrete models, not on
+    # the templates, so a template alone can never change it
+    check("the five pane templates are rebuilt, and the five clear-pane models with them",
+          len(panes) == 10,
           f"{sorted(p.stem.replace('template_glass_pane_', '') for p in panes)}")
     edge = any("#edge" in p.read_text() for p in panes)
     check("no #edge geometry left - that is the seam between two panes", not edge)
