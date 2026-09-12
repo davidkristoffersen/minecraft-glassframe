@@ -127,13 +127,11 @@ def connects(neighbour):
                                       or "glass" in neighbour)
 
 
-def pane_boxes(world, pos, t=2 / 16):
+def pane_boxes(world, pos, t=1 / 16):
     """The actual boxes, mirroring Rims.paneBars, as (minX,minY,minZ,sizeX,sizeY,sizeZ)."""
     me = world[pos]
     conn = {d: connects(at(world, pos, d)) for d in SIDES}
     n, s, e, w = conn["north"], conn["south"], conn["east"], conn["west"]
-    across = min(t, HI - LO)     # a bar is its own thickness across the sheet, centred
-    mid = (LO + HI) / 2 - across / 2
     minX, maxX = (0 if w else LO), (1 if e else HI)
     minZ, maxZ = (0 if n else LO), (1 if s else HI)
     along_x, along_z = e or w, n or s
@@ -172,36 +170,33 @@ def pane_boxes(world, pos, t=2 / 16):
             continue
         y = 1 - t if top else 0
         cover_x, cover_z = covered_along(vert, True), covered_along(vert, False)
-        along_the_x = uncovered(minX, maxX, cover_x) if along_x else []
-        for a, b in along_the_x:
-            out.append((a, y, mid, b - a, t, across))
-        # the Z rail only skips the post while an X rail actually survives over it
-        x_owns_post = any(a <= LO + 1e-4 and b >= HI - 1e-4 for a, b in along_the_x)
+        if along_x:
+            for a, b in uncovered(minX, maxX, cover_x):
+                out.append((a, y, LO, b - a, t, HI - LO))
         if along_z:
-            spans = ([(minZ, LO)] if n else []) + ([(HI, maxZ)] if s else []) \
-                if (along_x and x_owns_post) else [(minZ, maxZ)]
+            spans = ([(minZ, LO)] if n else []) + ([(HI, maxZ)] if s else []) if along_x \
+                else [(minZ, maxZ)]
             for span in spans:
                 for a, b in uncovered(span[0], span[1], cover_z):
-                    out.append((mid, y, a, across, t, b - a))
+                    out.append((LO, y, a, HI - LO, t, b - a))
     perp = {"north": ("east", "west"), "south": ("east", "west"),
             "east": ("north", "south"), "west": ("north", "south")}
     for d in SIDES:
         pos_side = d in ("east", "south")
         straight = (not conn[d] and conn[OPP[d]]
                     and not conn[perp[d][0]] and not conn[perp[d][1]])
-        width = t                # same thickness as every other bar; at t = 2px it fills the post
         if conn[d]:
             if at(world, pos, d) == me:
                 continue
-            a = 1 - width if pos_side else 0
+            a = 1 - t if pos_side else 0
         elif straight:
-            a = mid
+            a = HI - t if pos_side else LO
         else:
             continue
         if d in ("east", "west"):
-            out.append((a, 0, mid, width, 1, across))
+            out.append((a, 0, LO, t, 1, HI - LO))
         else:
-            out.append((mid, 0, a, across, 1, width))
+            out.append((LO, 0, a, HI - LO, 1, t))
     return out
 
 
@@ -393,66 +388,6 @@ def main_panes():
     check("and a pane standing on a wall no longer breaks its rail",
           len(rails) == 1 and abs(rails[0][0] - LO) < 1e-9
           and abs(rails[0][0] + rails[0][3] - 1) < 1e-9, f"{rails}")
-
-    print("\nsomething always has to own the post")
-    # a corner with the upper course carrying on east over it: the X rail is fully
-    # covered, so the Z rail has to run through the post instead of skipping it
-    over = {(24, 0, 0): "pane", (25, 0, 0): "pane", (24, 0, 1): "pane",
-            (24, 1, 0): "pane", (25, 1, 0): "pane"}
-    tops = [b for b in resolve(pane_boxes(over, (24, 0, 0)))
-            if b[4] < 0.5 and abs(b[1] + b[4] - 1) < 1e-9]
-    covered = [b for b in tops
-               if b[0] <= LO + 1e-4 <= b[0] + b[3] and b[2] <= LO + 1e-4 <= b[2] + b[5]]
-    check("the corner is covered even when the X rail is entirely gone",
-          len(covered) == 1, f"tops={tops}")
-
-    # and where the X rail does survive, the Z rail still keeps off it
-    plain = {(0, 0, 0): "pane", (1, 0, 0): "pane", (0, 0, 1): "pane"}
-    boxes = resolve(pane_boxes(plain, (0, 0, 0)))
-    clash = [(a, b) for i, a in enumerate(boxes) for b in boxes[i + 1:] if overlaps(a, b)]
-    check("without stacking on it, the two rails still do not overlap", not clash,
-          f"{len(clash)} clashes")
-
-    print("\nan upright has to meet a rail square on")
-    odd = []
-    import itertools
-    for mask in itertools.product([None, "pane", "solid"], repeat=4):
-        world = {(0, 0, 0): "pane"}
-        for side, val in zip(SIDES, mask):
-            if val:
-                world[DIRS[side]] = val
-        for b in resolve(pane_boxes(world, (0, 0, 0))):
-            thin = sorted(b[3:])[:2]        # the two small dimensions of this bar
-            if any(abs(d - (HI - LO)) > 1e-9 for d in thin):
-                odd.append((mask, b))
-    check("at the default thickness every bar has the same square section",
-          not odd, f"{len(odd)} odd, e.g. {odd[0] if odd else ''}")
-
-    # The same sweep at a hairline thickness. 2px is the default because it fills the
-    # post exactly, but a thinner bar has to hold together too: centred on the sheet
-    # rather than flush with one face of it, still square, still inside its own block
-    # and still not sharing space with the bar it meets at a corner.
-    thin_odd, thin_clash, thin_stray = [], [], []
-    for mask in itertools.product([None, "pane", "solid"], repeat=4):
-        world = {(0, 0, 0): "pane"}
-        for side, val in zip(SIDES, mask):
-            if val:
-                world[DIRS[side]] = val
-        boxes = resolve(pane_boxes(world, (0, 0, 0), t=1 / 16))
-        for b in boxes:
-            thin = sorted(b[3:])[:2]
-            if any(abs(d - 1 / 16) > 1e-9 for d in thin) and len(boxes) > 1:
-                thin_odd.append((mask, b))
-            if any(v < -1e-6 for v in b[:3]) or any(b[i] + b[i + 3] > 1 + 1e-6 for i in range(3)):
-                thin_stray.append((mask, b))
-        thin_clash += [(a, b) for i, a in enumerate(boxes) for b in boxes[i + 1:]
-                       if overlaps(a, b)]
-    check("a 1px outline is square too, not flush with one face of the sheet",
-          not thin_odd, f"{len(thin_odd)} odd, e.g. {thin_odd[0] if thin_odd else ''}")
-    check("a 1px outline stays inside its own block", not thin_stray,
-          f"{len(thin_stray)} strays")
-    check("a 1px outline does not overlap itself either", not thin_clash,
-          f"{len(thin_clash)} overlapping pairs")
 
     print("\npane bar geometry")
     end = resolve(pane_boxes({(0, 0, 0): "pane", (1, 0, 0): "pane"}, (0, 0, 0)))

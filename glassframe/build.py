@@ -83,7 +83,7 @@ import zipfile
 
 PACK_FORMAT = 88          # 26.2, from the client's version.json
 NAME = "GlassFrame"
-VERSION = "2.8.2"         # bumped with ../bump.py, never by hand
+VERSION = "2.8.3"         # bumped with ../bump.py, never by hand
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -341,33 +341,6 @@ def _png_encode(w, h, rows):
             + chunk(b"IEND", b""))
 
 
-SPECK_INSET = 2          # texels each speck is pulled towards the middle
-
-
-def pull_specks_in(w, h, rows, inset=SPECK_INSET):
-    """Pull every speck SPECK_INSET texels towards the middle of the sprite.
-
-    Vanilla puts its five flecks in two diagonal streaks that run right up to the
-    frame - at (4,2) (3,3) (2,4) and (13,12) (12,13) - because vanilla has a border
-    drawn over that corner anyway. We do not, and a GlassRim bar is two texels wide
-    along exactly those edges, so a fleck sat underneath one and read as a chip in
-    the bar rather than a mark in the glass. Moved in, the streaks keep their shape
-    and land in open sheet.
-
-    The frame itself (the outermost ring) is left where it is: it is never sampled,
-    since every face of ours runs uv 1-15, and moving it would put a visible ring
-    two texels inside the block."""
-    specks = [(x, y, list(rows[y][x * 4:x * 4 + 4]))
-              for y in range(1, h - 1) for x in range(1, w - 1)
-              if rows[y][x * 4 + 3]]
-    for x, y, _ in specks:
-        rows[y][x * 4:x * 4 + 4] = [0, 0, 0, 0]
-    for x, y, pixel in specks:
-        to_x = min(w - 2, max(1, x + (inset if x < w / 2 else -inset)))
-        to_y = min(h - 2, max(1, y + (inset if y < h / 2 else -inset)))
-        rows[to_y][to_x * 4:to_x * 4 + 4] = pixel
-
-
 def fade_specks(models_dir):
     """Write the two glass textures, flecks toned down - the block one and the pane
     one, which keeps them stronger. False if the client jar was not there to read."""
@@ -387,7 +360,6 @@ def fade_specks(models_dir):
             for x in range(w):
                 if rows[y][x * 4 + 3] > ceiling:
                     rows[y][x * 4 + 3] = ceiling
-        pull_specks_in(w, h, rows)
         (out / f"{name}.png").write_bytes(_png_encode(w, h, rows))
 
     # Stained glass ships untouched, at vanilla's own 40-61%. It was thinned for a
