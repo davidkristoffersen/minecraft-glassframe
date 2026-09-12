@@ -2,6 +2,10 @@
 
 One entry per published version, newest first.
 
+## GlassFrame 2.8.2
+
+Stained glass back to vanilla alpha - thinning the bars only uncovered the hole their opacity was hiding
+
 ## GlassFrame 2.8.1
 
 Specks pulled two texels in from the edges, clear of where a 2px outline bar runs

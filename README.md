@@ -7,7 +7,7 @@ pack.
 
 | Pack | What | Download |
 |---|---|---|
-| [GlassFrame](glassframe/) | Glass with no borders at all, blocks and panes, so a window or floor reads as one clean sheet. Pairs with a plugin that draws the outline back only where the glass actually stops. | [`GlassFrame-2.8.1-borderless.zip`](glassframe/GlassFrame-2.8.1-borderless.zip) |
+| [GlassFrame](glassframe/) | Glass with no borders at all, blocks and panes, so a window or floor reads as one clean sheet. Pairs with a plugin that draws the outline back only where the glass actually stops. | [`GlassFrame-2.8.2-borderless.zip`](glassframe/GlassFrame-2.8.2-borderless.zip) |
 | [ServerUI](serverui/) | Pixel icons at the emoji code points the server's dialog menus use, drawn into the default font. Without the pack the menus show the same symbols in Unifont. | [`ServerUI-1.0.1.zip`](serverui/ServerUI-1.0.1.zip) |
 
 Every zip name carries its version: a new build is a new file and a new sha1,
