@@ -7,8 +7,24 @@ pack.
 
 | Pack | What | Download |
 |---|---|---|
-| [GlassFrame](glassframe/) | Glass with no borders at all, blocks and panes, so a window or floor reads as one clean sheet. Pairs with a plugin that draws the outline back only where the glass actually stops. | [`GlassFrame-2.7.0-borderless.zip`](glassframe/GlassFrame-2.7.0-borderless.zip) |
+| [GlassFrame](glassframe/) | Glass with no borders at all, blocks and panes, so a window or floor reads as one clean sheet. Pairs with a plugin that draws the outline back only where the glass actually stops. | [`GlassFrame-2.7.1-borderless.zip`](glassframe/GlassFrame-2.7.1-borderless.zip) |
 | [ServerUI](serverui/) | Pixel icons at the emoji code points the server's dialog menus use, drawn into the default font. Without the pack the menus show the same symbols in Unifont. | [`ServerUI-1.0.0.zip`](serverui/ServerUI-1.0.0.zip) |
 
 Every zip name carries its version: a new build is a new file and a new sha1,
 so no client is ever served different bytes under a name it has cached.
+
+## Working on a pack
+
+This repo is a git submodule of the server repo (`resourcepacks/` there), and the
+server's `publish-packs.py` is the one command that ships a change: it rebuilds
+every pack, commits and pushes here, waits for GitHub to serve the new zip, and
+writes the url and sha1 into the server's look-packs configs.
+
+- `python3 build.py [pack]` - build; each pack's zip lands in its folder.
+- `python3 bump.py <pack> major|minor|patch "note"` - the only way a version
+  changes. Patch = the same thing drawn or tuned better, minor = something new,
+  major = the pack changes shape. Rewrites the READMEs, appends to `CHANGELOG.md`,
+  rebuilds.
+- Publishing a changed zip under an unchanged version is refused upstream: the
+  publisher bumps the patch number itself when it finds that, so a forgotten bump
+  costs a version number, never a stale client cache.

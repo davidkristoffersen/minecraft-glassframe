@@ -82,7 +82,8 @@ import shutil
 import zipfile
 
 PACK_FORMAT = 88          # 26.2, from the client's version.json
-VERSION = "2.7.0"
+NAME = "GlassFrame"
+VERSION = "2.7.1"         # bumped with ../bump.py, never by hand
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -429,15 +430,33 @@ def build(mode="borderless", version=None):
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for path in sorted(SRC.rglob("*")):
             if path.is_file():
-                z.write(path, path.relative_to(SRC).as_posix())
+                # fixed timestamps: the same models always give the same sha1, so the
+                # publisher can tell "rebuilt" from "changed"
+                info = zipfile.ZipInfo(path.relative_to(SRC).as_posix(), (2026, 1, 1, 0, 0, 0))
+                info.compress_type = zipfile.ZIP_DEFLATED
+                z.writestr(info, path.read_bytes())
     return out, written
 
 
-if __name__ == "__main__":
+def main():
+    """Build every variant. The borderless build is the one that ships: it lands next to
+    this script as NAME-VERSION-borderless.zip (older versions removed), the four evidence
+    builds stay in dist/. Returns the shipped zip - the contract ../build.py drives."""
+    shipped = None
     for mode, name in (("rim", VERSION),
                        ("rimtop", VERSION + "-toponly"),
                        ("borderless", VERSION + "-borderless"),
                        ("cleanfloor", VERSION + "-cleanfloor"),
                        ("frame", VERSION + "-frame")):
         path, count = build(mode, name)
-        print(f"{path.name:34} {count:2} models  {path.stat().st_size:6} bytes")
+        print(f"  {path.name:34} {count:2} models  {path.stat().st_size:6} bytes")
+        if mode == "borderless":
+            shipped = HERE / path.name
+            for old in HERE.glob(f"{NAME}-*.zip"):
+                old.unlink()
+            shutil.copy(path, shipped)
+    return shipped
+
+
+if __name__ == "__main__":
+    main()

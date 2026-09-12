@@ -1,0 +1,33 @@
+{
+  "providers": [
+    {
+      "type": "bitmap",
+      "file": "serverui:font/icons.png",
+      "height": 8,
+      "ascent": 7,
+      "chars": [
+        "▶▸✔✎⚙❓⚠★●○■▢•⟳⟲✖",
+        "✘→✦✨＋ℹ⬆⬇🧩🎨🌍⚡🖥☠👁🎒",
+        "🧰☀🌙🌤🌧⛈🧪💾👥👤📜📖🌐🎲🗑⚖",
+        "◎⌖♪⏹📣🔊❤🐴🐕🐈🦜🐾🧟👻🍖🌫",
+        "🧬🫀🏆🗺🎥📷🔥💬💎🔔🔮🧊🍞↻❔✅",
+        "🎵\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000\u0000"
+      ]
+    },
+    {
+      "type": "reference",
+      "id": "minecraft:include/space"
+    },
+    {
+      "type": "reference",
+      "id": "minecraft:include/default",
+      "filter": {
+        "uniform": false
+      }
+    },
+    {
+      "type": "reference",
+      "id": "minecraft:include/unifont"
+    }
+  ]
+}

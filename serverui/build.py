@@ -38,8 +38,8 @@ Building
 --------
 `python3 build.py` reads the vanilla `font/default.json` from the installed
 client jar (so the references to the vanilla providers are exactly the current
-ones - nothing of Mojang's is vendored), writes `src/`, `dist/ServerUI-<v>.zip`
-and `dist/preview.png` (the sheet at 6x on dark, for checking the art by eye).
+ones - nothing of Mojang's is vendored), writes `src/`, `ServerUI-<v>.zip`
+and `preview.png` (the sheet at 6x on dark, for checking the art by eye).
 """
 
 import binascii
@@ -50,7 +50,8 @@ import struct
 import zipfile
 import zlib
 
-VERSION = "1.0.0"
+NAME = "ServerUI"
+VERSION = "1.0.0"         # bumped with ../bump.py, never by hand
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
 DIST = HERE / "dist"
@@ -768,11 +769,12 @@ def build(version=None):
     }, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     (SRC / "pack.png").write_bytes(pack_icon(table))
 
-    DIST.mkdir(exist_ok=True)
-    (DIST / "preview.png").write_bytes(preview(table))
-    out = DIST / f"ServerUI-{version}.zip"
-    if out.exists():
-        out.unlink()
+    (HERE / "preview.png").write_bytes(preview(table))
+    # the shipped zip lands next to this script (that is the URL the server hands out),
+    # older versions go
+    for old in HERE.glob(f"{NAME}-*.zip"):
+        old.unlink()
+    out = HERE / f"{NAME}-{version}.zip"
     with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED) as z:
         for path in sorted(SRC.rglob("*")):
             if path.is_file():
@@ -783,9 +785,15 @@ def build(version=None):
     return out, len(table), from_jar
 
 
-if __name__ == "__main__":
+def main():
+    """Build and return the shipped zip - the contract ../build.py drives."""
     import hashlib
     out, count, from_jar = build()
-    print(f"{out.name}: {count} glyphs, {out.stat().st_size} bytes, "
+    print(f"  {out.name}: {count} glyphs, {out.stat().st_size} bytes, "
           f"sha1 {hashlib.sha1(out.read_bytes()).hexdigest()}"
           + ("" if from_jar else "  (client jar not found - vanilla providers assumed)"))
+    return out
+
+
+if __name__ == "__main__":
+    main()
