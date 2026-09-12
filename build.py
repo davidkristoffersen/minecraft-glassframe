@@ -82,7 +82,7 @@ import shutil
 import zipfile
 
 PACK_FORMAT = 88          # 26.2, from the client's version.json
-VERSION = "2.5.0"
+VERSION = "2.6.0"
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -258,13 +258,28 @@ PANE_SPECK_ALPHA = 128   # 50% - panes, which need more to read the same
 # own copy of the texture with the flecks left stronger. Only clear glass needs
 # it; stained panes are already 40-61% in their own textures.
 PANE_TEXTURE = "glassframe_pane"
+
+# The outline bars GlassRim draws are display entities showing a stained glass block,
+# and a display entity has no alpha of its own - what you see is the block's texture.
+# With the bars widened to the pane's full 2px they take up noticeably more room, so
+# the stained glass textures are reissued at a fraction of their own alpha. Vanilla
+# stained glass runs 40-61% inside; at 0.65 of that it is nearer a quarter, which
+# reads as an outline rather than a rail. It applies to stained glass blocks in a
+# build too, which is the price of the bars having no alpha to set.
+BAR_ALPHA_SCALE = 0.65
+
+COLOURS_ALL = ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink",
+               "gray", "light_gray", "cyan", "purple", "blue", "brown", "green",
+               "red", "black"]
 CLIENT_JAR = pathlib.Path.home() / (
     "Library/Application Support/minecraft/versions/26.2/26.2.jar")
 
 
 def _png_decode(data):
+    """Any 8-bit PNG in, RGBA rows out. Minecraft's sprites are a mix of true colour,
+    greyscale and palette forms, so normalise rather than assume."""
     import struct, zlib
-    pos, idat = 8, b""
+    pos, idat, palette, transparency = 8, b"", None, None
     while pos < len(data):
         ln = struct.unpack(">I", data[pos:pos + 4])[0]
         typ, chunk = data[pos + 4:pos + 8], data[pos + 8:pos + 8 + ln]
@@ -272,16 +287,21 @@ def _png_decode(data):
             w, h, depth, colour = struct.unpack(">IIBB", chunk[:10])
         elif typ == b"IDAT":
             idat += chunk
+        elif typ == b"PLTE":
+            palette = chunk
+        elif typ == b"tRNS":
+            transparency = chunk
         pos += 12 + ln
-    if colour != 6 or depth != 8:
-        raise ValueError("expected 8-bit RGBA")
-    raw, stride, rows, prev, i = zlib.decompress(idat), w * 4, [], bytearray(w * 4), 0
+    if depth != 8:
+        raise ValueError(f"expected 8 bits per channel, got {depth}")
+    channels = {0: 1, 2: 3, 3: 1, 4: 2, 6: 4}[colour]
+    raw, stride, lines, prev, i = zlib.decompress(idat), w * channels, [], bytearray(w * channels), 0
     for _ in range(h):
         filt, line, i = raw[i], bytearray(raw[i + 1:i + 1 + stride]), i + 1 + stride
         for x in range(stride):
-            a = line[x - 4] if x >= 4 else 0
+            a = line[x - channels] if x >= channels else 0
             b = prev[x]
-            c = prev[x - 4] if x >= 4 else 0
+            c = prev[x - channels] if x >= channels else 0
             if filt == 1:
                 line[x] = (line[x] + a) & 255
             elif filt == 2:
@@ -292,8 +312,28 @@ def _png_decode(data):
                 p = a + b - c
                 pa, pb, pc = abs(p - a), abs(p - b), abs(p - c)
                 line[x] = (line[x] + (a if pa <= pb and pa <= pc else b if pb <= pc else c)) & 255
-        rows.append(bytearray(line))
+        lines.append(bytearray(line))
         prev = line
+    rows = []
+    for line in lines:
+        row = bytearray(w * 4)
+        for x in range(w):
+            if colour == 6:
+                row[x * 4:x * 4 + 4] = line[x * 4:x * 4 + 4]
+            elif colour == 2:
+                row[x * 4:x * 4 + 3] = line[x * 3:x * 3 + 3]
+                row[x * 4 + 3] = 255
+            elif colour == 4:
+                grey, alpha = line[x * 2], line[x * 2 + 1]
+                row[x * 4:x * 4 + 4] = bytes((grey, grey, grey, alpha))
+            elif colour == 0:
+                grey = line[x]
+                row[x * 4:x * 4 + 4] = bytes((grey, grey, grey, 255))
+            else:                                   # palette
+                idx = line[x]
+                row[x * 4:x * 4 + 3] = palette[idx * 3:idx * 3 + 3]
+                row[x * 4 + 3] = transparency[idx] if transparency and idx < len(transparency) else 255
+        rows.append(row)
     return w, h, rows
 
 
@@ -331,6 +371,17 @@ def fade_specks(models_dir):
                 if rows[y][x * 4 + 3] > ceiling:
                     rows[y][x * 4 + 3] = ceiling
         (out / f"{name}.png").write_bytes(_png_encode(w, h, rows))
+
+    # and every stained glass, thinned - this is what the outline bars are made of
+    with zipfile.ZipFile(CLIENT_JAR) as jar:
+        for colour in COLOURS_ALL:
+            sprite = f"{colour}_stained_glass"
+            w, h, rows = _png_decode(
+                jar.read(f"assets/minecraft/textures/block/{sprite}.png"))
+            for y in range(h):
+                for x in range(w):
+                    rows[y][x * 4 + 3] = int(rows[y][x * 4 + 3] * BAR_ALPHA_SCALE)
+            (out / f"{sprite}.png").write_bytes(_png_encode(w, h, rows))
     return True
 
 

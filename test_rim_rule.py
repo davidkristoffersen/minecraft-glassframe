@@ -127,7 +127,7 @@ def connects(neighbour):
                                       or "glass" in neighbour)
 
 
-def pane_boxes(world, pos, t=1 / 16):
+def pane_boxes(world, pos, t=2 / 16):
     """The actual boxes, mirroring Rims.paneBars, as (minX,minY,minZ,sizeX,sizeY,sizeZ)."""
     me = world[pos]
     conn = {d: connects(at(world, pos, d)) for d in SIDES}
@@ -136,58 +136,70 @@ def pane_boxes(world, pos, t=1 / 16):
     minZ, maxZ = (0 if n else LO), (1 if s else HI)
     along_x, along_z = e or w, n or s
     out = []
+    if not along_x and not along_z:
+        # one solid bar the size of the post - see Rims.paneBars
+        return [(LO, 0, LO, HI - LO, 1, HI - LO)]
 
-    def continues_along(vertical, x_axis):
-        """A pane above or below covers only the 2px post, so it hides this rail along an
-        axis only if it reaches out along that axis too."""
+    def covered_along(vertical, x_axis):
+        """How much of this block the pane above/below actually sits over - its own post
+        plus whichever arms it reaches out with - or None if there is no pane there."""
         d = (0, 1, 0) if vertical == "up" else (0, -1, 0)
         npos = (pos[0] + d[0], pos[1] + d[1], pos[2] + d[2])
         if world.get(npos) != me:
-            return False
-        nconn = {s: connects(at(world, npos, s)) for s in SIDES}
-        return (nconn["east"] or nconn["west"]) if x_axis else (nconn["north"] or nconn["south"])
+            return None
+        c = {s: connects(at(world, npos, s)) for s in SIDES}
+        return ((0 if c["west"] else LO), (1 if c["east"] else HI)) if x_axis \
+            else ((0 if c["north"] else LO), (1 if c["south"] else HI))
+
+    def uncovered(a, b, cover):
+        """Each cut end reaches one pane-thickness into the cover, so the rail tucks under
+        whatever rises there instead of stopping on its edge and leaving a corner hole."""
+        if cover is None:
+            return [(a, b)] if b - a > 1e-4 else []
+        reach = HI - LO
+        runs = []
+        if cover[0] - a > 1e-4:
+            runs.append((a, min(cover[0] + reach, b)))
+        if b - cover[1] > 1e-4:
+            runs.append((max(cover[1] - reach, a), b))
+        return runs
 
     for top in (True, False):
         vert = "up" if top else "down"
         if not along_x and not along_z and at(world, pos, vert) == me:
             continue
         y = 1 - t if top else 0
-        if along_x and not continues_along(vert, True):
-            out.append((minX, y, LO, maxX - minX, t, HI - LO))
-        if along_z and not continues_along(vert, False):
-            if along_x:
-                if n:
-                    out.append((LO, y, minZ, HI - LO, t, LO - minZ))
-                if s:
-                    out.append((LO, y, HI, HI - LO, t, maxZ - HI))
-            else:
-                out.append((LO, y, minZ, HI - LO, t, maxZ - minZ))
-        if not along_x and not along_z:
-            out.append((LO, y, LO, HI - LO, t, HI - LO))
-    if not along_x and not along_z:
-        pt = min(t, (HI - LO) / 4)          # thin enough that four posts leave the middle open
-        for cx in (LO, HI - pt):
-            for cz in (LO, HI - pt):
-                out.append((cx, 0, cz, pt, 1, pt))
-        return out
+        cover_x, cover_z = covered_along(vert, True), covered_along(vert, False)
+        along_the_x = uncovered(minX, maxX, cover_x) if along_x else []
+        for a, b in along_the_x:
+            out.append((a, y, LO, b - a, t, HI - LO))
+        # the Z rail only skips the post while an X rail actually survives over it
+        x_owns_post = any(a <= LO + 1e-4 and b >= HI - 1e-4 for a, b in along_the_x)
+        if along_z:
+            spans = ([(minZ, LO)] if n else []) + ([(HI, maxZ)] if s else []) \
+                if (along_x and x_owns_post) else [(minZ, maxZ)]
+            for span in spans:
+                for a, b in uncovered(span[0], span[1], cover_z):
+                    out.append((LO, y, a, HI - LO, t, b - a))
     perp = {"north": ("east", "west"), "south": ("east", "west"),
             "east": ("north", "south"), "west": ("north", "south")}
     for d in SIDES:
         pos_side = d in ("east", "south")
         straight = (not conn[d] and conn[OPP[d]]
                     and not conn[perp[d][0]] and not conn[perp[d][1]])
+        width = t                # same thickness as every other bar; at t = 2px it fills the post
         if conn[d]:
             if at(world, pos, d) == me:
                 continue
-            a = 1 - t if pos_side else 0
+            a = 1 - width if pos_side else 0
         elif straight:
-            a = HI - t if pos_side else LO
+            a = LO
         else:
             continue
         if d in ("east", "west"):
-            out.append((a, 0, LO, t, 1, HI - LO))
+            out.append((a, 0, LO, width, 1, HI - LO))
         else:
-            out.append((LO, 0, a, HI - LO, 1, t))
+            out.append((LO, 0, a, HI - LO, 1, width))
     return out
 
 
@@ -248,16 +260,16 @@ def pane_bars(world, pos):
     rails, uprights = [], []
 
     def continues_along(vertical, x_axis):
+        """True only when the pane there covers this block's whole span - a partial cover
+        leaves a run of rail behind, which pane_boxes works out exactly."""
         d = (0, 1, 0) if vertical == "up" else (0, -1, 0)
         npos = (pos[0] + d[0], pos[1] + d[1], pos[2] + d[2])
         if world.get(npos) != me:
             return False
-        nconn = {s: connects(at(world, npos, s)) for s in SIDES}
-        return (nconn["east"] or nconn["west"]) if x_axis else (nconn["north"] or nconn["south"])
+        c = {s: connects(at(world, npos, s)) for s in SIDES}
+        return (c["east"] and c["west"]) if x_axis else (c["north"] and c["south"])
 
     for end in ("up", "down"):
-        if not along_x and not along_z and at(world, pos, end) == me:
-            continue
         if along_x and not continues_along(end, True):
             rails.append((end, "x"))
         if along_z and not continues_along(end, False):
@@ -311,14 +323,15 @@ def main_panes():
     check("and against a different colour of pane", ("east", "edge") in up)
 
     lone = resolve(pane_boxes({(0, 0, 0): "pane"}, (0, 0, 0)))
-    posts = [b for b in lone if run_axis(b) == 1]
-    clash = [(a, b) for i, a in enumerate(lone) for b in lone[i + 1:] if overlaps(a, b)]
-    check("a pane on its own is outlined by four corner posts",
-          len(posts) == 4 and not clash, f"{len(posts)} posts, {len(clash)} clashes")
-    west_pair = sorted(b[3] for b in posts if abs(b[0] - LO) < 1e-9)
-    check("the posts sit at its corners rather than filling the 2px post",
-          sum(west_pair) < HI - LO - 1e-9 or len(west_pair) == 2,
-          f"west side posts span {sum(west_pair):.4f} of {HI - LO:.4f}")
+    check("a pane on its own is one solid bar, like a wall's end cap", len(lone) == 1,
+          f"{len(lone)} bars")
+    bar = lone[0]
+    check("filling the post, full height",
+          abs(bar[3] - (HI - LO)) < 1e-9 and abs(bar[5] - (HI - LO)) < 1e-9
+          and abs(bar[4] - 1) < 1e-9, f"{bar}")
+    stacked = resolve(pane_boxes({(0, 0, 0): "pane", (0, 1, 0): "pane"}, (0, 0, 0)))
+    check("and stacked lone panes still make one continuous column",
+          len(stacked) == 1 and abs(stacked[0][4] - 1) < 1e-9, f"{stacked}")
 
     # the case from the screenshots: a wall corner with a single pane standing on it
     on_corner = {(0, 0, 0): "pane", (1, 0, 0): "pane", (0, 0, 1): "pane", (0, 1, 0): "pane"}
@@ -339,6 +352,79 @@ def main_panes():
     corner_in = {(0, 0, 0): "pane", (0, 0, -1): "pane", (1, 0, 0): "pane"}
     _, up = pane_bars(corner_in, (0, 0, 0))
     check("a corner draws nothing on its inside faces", up == [], f"{up}")
+
+    print("\na wall whose upper course stops early")
+    # ground PPP with an arm south of the middle, one course above only PP
+    stepped = {(1, 0, 0): "pane", (2, 0, 0): "pane", (3, 0, 0): "pane",
+               (2, 0, 1): "pane", (1, 1, 0): "pane", (2, 1, 0): "pane"}
+    two = [b for b in resolve(pane_boxes(stepped, (2, 0, 0)))
+           if b[4] < 0.5 and abs(b[1] + b[4] - 1) < 1e-9 and abs(b[2] - LO) < 1e-9]
+    three = [b for b in resolve(pane_boxes(stepped, (3, 0, 0)))
+             if b[4] < 0.5 and abs(b[1] + b[4] - 1) < 1e-9 and abs(b[2] - LO) < 1e-9]
+    check("the block under the end of the upper course keeps the rest of its rail",
+          len(two) == 1 and two[0][0] <= HI + 1e-9
+          and abs(two[0][0] + two[0][3] - 1) < 1e-9, f"{two}")
+    check("and it meets the next block's rail with no gap",
+          len(three) == 1 and abs(three[0][0]) < 1e-9, f"{three}")
+    covered = [b for b in resolve(pane_boxes(stepped, (1, 0, 0)))
+               if b[4] < 0.5 and abs(b[1] + b[4] - 1) < 1e-9 and abs(b[2] - LO) < 1e-9]
+    check("a block fully under the upper course still draws no top rail",
+          covered == [], f"{covered}")
+
+    print("\nthe corner where a rail meets something standing on it")
+    # a wall stepping up to the east, with an arm running north from the step
+    step = {(6, 0, 0): "pane", (7, 0, 0): "pane", (8, 0, 0): "pane", (7, 0, -1): "pane",
+            (7, 1, 0): "pane", (8, 1, 0): "pane"}
+    rails = [b for b in resolve(pane_boxes(step, (7, 0, 0)))
+             if b[4] < 0.5 and abs(b[1] + b[4] - 1) < 1e-9]
+    along_x = [b for b in rails if abs(b[2] - LO) < 1e-9]
+    check("the rail reaches the post rather than stopping on the covered strip",
+          len(along_x) == 1 and along_x[0][0] + along_x[0][3] >= HI - 1e-9,
+          f"{along_x}")
+    corner_filled = any(b[0] <= LO + 1e-9 <= b[0] + b[3] and b[2] <= LO + 1e-9 <= b[2] + b[5]
+                        for b in rails)
+    check("so the corner cube under the step is covered", corner_filled, f"{rails}")
+
+    standing = {(22, 0, 0): "pane", (23, 0, 0): "pane", (22, 1, 0): "pane"}
+    rails = [b for b in resolve(pane_boxes(standing, (22, 0, 0)))
+             if b[4] < 0.5 and abs(b[1] + b[4] - 1) < 1e-9]
+    check("and a pane standing on a wall no longer breaks its rail",
+          len(rails) == 1 and abs(rails[0][0] - LO) < 1e-9
+          and abs(rails[0][0] + rails[0][3] - 1) < 1e-9, f"{rails}")
+
+    print("\nsomething always has to own the post")
+    # a corner with the upper course carrying on east over it: the X rail is fully
+    # covered, so the Z rail has to run through the post instead of skipping it
+    over = {(24, 0, 0): "pane", (25, 0, 0): "pane", (24, 0, 1): "pane",
+            (24, 1, 0): "pane", (25, 1, 0): "pane"}
+    tops = [b for b in resolve(pane_boxes(over, (24, 0, 0)))
+            if b[4] < 0.5 and abs(b[1] + b[4] - 1) < 1e-9]
+    covered = [b for b in tops
+               if b[0] <= LO + 1e-4 <= b[0] + b[3] and b[2] <= LO + 1e-4 <= b[2] + b[5]]
+    check("the corner is covered even when the X rail is entirely gone",
+          len(covered) == 1, f"tops={tops}")
+
+    # and where the X rail does survive, the Z rail still keeps off it
+    plain = {(0, 0, 0): "pane", (1, 0, 0): "pane", (0, 0, 1): "pane"}
+    boxes = resolve(pane_boxes(plain, (0, 0, 0)))
+    clash = [(a, b) for i, a in enumerate(boxes) for b in boxes[i + 1:] if overlaps(a, b)]
+    check("without stacking on it, the two rails still do not overlap", not clash,
+          f"{len(clash)} clashes")
+
+    print("\nan upright has to meet a rail square on")
+    odd = []
+    import itertools
+    for mask in itertools.product([None, "pane", "solid"], repeat=4):
+        world = {(0, 0, 0): "pane"}
+        for side, val in zip(SIDES, mask):
+            if val:
+                world[DIRS[side]] = val
+        for b in resolve(pane_boxes(world, (0, 0, 0))):
+            thin = sorted(b[3:])[:2]        # the two small dimensions of this bar
+            if any(abs(d - (HI - LO)) > 1e-9 for d in thin):
+                odd.append((mask, b))
+    check("at the default thickness every bar has the same square section",
+          not odd, f"{len(odd)} odd, e.g. {odd[0] if odd else ''}")
 
     print("\npane bar geometry")
     end = resolve(pane_boxes({(0, 0, 0): "pane", (1, 0, 0): "pane"}, (0, 0, 0)))
