@@ -2,6 +2,14 @@
 
 One entry per published version, newest first.
 
+## ServerUI 1.0.1
+
+Pack icon: a menu button carrying a yellow ⚡ and a label, the thing the pack changes.
+
+## GlassFrame 2.7.2
+
+Pack icon: four glass blocks as one sheet with a single outer frame - what the pack plus GlassRim gives you.
+
 ## GlassFrame 2.7.1
 
 Deterministic zip: fixed entry timestamps, so a rebuild of unchanged models gives the same sha1. Models unchanged. Shipped zip now sits at the pack root; evidence builds stay in dist/.

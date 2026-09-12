@@ -83,7 +83,7 @@ import zipfile
 
 PACK_FORMAT = 88          # 26.2, from the client's version.json
 NAME = "GlassFrame"
-VERSION = "2.7.1"         # bumped with ../bump.py, never by hand
+VERSION = "2.7.2"         # bumped with ../bump.py, never by hand
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -369,6 +369,49 @@ def fade_specks(models_dir):
     return True
 
 
+def pack_icon():
+    """pack.png, 64x64: what a window looks like with this pack and GlassRim - four glass
+    blocks reading as ONE sheet: the vanilla sprite's interior tiled 2x2 at 2x, no lines
+    between the blocks, and a single frame around the whole thing in the sprite's own
+    border colour. Over a dusk-blue ground so the clear sheet reads as glass. Without the
+    client jar, a plain pale sheet."""
+    size, ground = 64, (38, 52, 74, 255)
+    rows = [bytearray(bytes(ground) * size) for _ in range(size)]
+    sprite = None
+    if CLIENT_JAR.exists():
+        import zipfile
+        with zipfile.ZipFile(CLIENT_JAR) as jar:
+            w, h, px = _png_decode(jar.read("assets/minecraft/textures/block/glass.png"))
+        sprite = [[tuple(px[y][x * 4:x * 4 + 4]) for x in range(w)] for y in range(h)]
+    for ty in range(2):
+        for tx in range(2):
+            for y in range(16):
+                for x in range(16):
+                    if sprite is not None:
+                        # the outer ring is the border the pack removes; sample the inside only
+                        sx, sy = 1 + (x * 14) // 16, 1 + (y * 14) // 16
+                        r, g, b, a = sprite[sy][sx]
+                    else:
+                        r, g, b, a = (255, 255, 255, 70 if (x + y) % 5 else 160)
+                    if a == 0:
+                        r, g, b, a = 200, 225, 240, 40  # clear glass: a breath of pale blue
+                    base = rows[0][0:4]
+                    out = tuple(int(base[i] * (1 - a / 255) + (r, g, b)[i] * (a / 255)) for i in range(3))
+                    for dy in range(2):
+                        row = rows[(ty * 16 + y) * 2 + dy]
+                        for dx in range(2):
+                            i = ((tx * 16 + x) * 2 + dx) * 4
+                            row[i:i + 4] = bytes((*out, 255))
+    # one frame around the whole sheet - the outline GlassRim draws where the glass stops
+    r, g, b, a = sprite[0][8] if sprite is not None else (255, 255, 255, 255)
+    frame = bytes((r, g, b, 255))
+    for y in range(size):
+        for x in range(size):
+            if x < 3 or y < 3 or x >= size - 3 or y >= size - 3:
+                rows[y][x * 4:x * 4 + 4] = frame
+    return _png_encode(size, size, rows)
+
+
 # The concrete models for CLEAR glass panes, repointed at the pane texture. Vanilla
 # sets "pane" on these, not on the templates, so a template cannot change it - the
 # child always wins. Stained panes are left alone and keep their own colours.
@@ -422,6 +465,7 @@ def build(mode="borderless", version=None):
 
     if mode in ("borderless", "rim", "rimtop") and not fade_specks(models):
         print("  (client jar not found - shipping without the faded speck texture)")
+    (SRC / "pack.png").write_bytes(pack_icon())
 
     DIST.mkdir(exist_ok=True)
     out = DIST / f"GlassFrame-{version}.zip"

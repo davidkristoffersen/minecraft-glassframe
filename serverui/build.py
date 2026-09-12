@@ -51,7 +51,7 @@ import zipfile
 import zlib
 
 NAME = "ServerUI"
-VERSION = "1.0.0"         # bumped with ../bump.py, never by hand
+VERSION = "1.0.1"         # bumped with ../bump.py, never by hand
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
 DIST = HERE / "dist"
@@ -700,24 +700,36 @@ def preview(table, scale=6):
 
 
 def pack_icon(table):
-    """pack.png: four hub icons at 4x in their menu colours on a dark square."""
-    picks = (("⚡", (255, 255, 85)), ("🧩", (85, 255, 255)),
-             ("👁", (255, 85, 255)), ("🎒", (0, 170, 170)))
-    scale, size = 4, 64
-    rows = [bytearray(bytes((28, 30, 36, 255)) * size) for _ in range(size)]
-    for n, (ch, (r, g, b)) in enumerate(picks):
-        ox, oy = (n % 2) * 32, (n // 2) * 32
-        for y, art in enumerate(table[ch]):
-            for x, px in enumerate(art):
-                if px == ".":
-                    continue
-                v = SHADES[px] / 255
-                colour = bytes((int(r * v), int(g * v), int(b * v), 255))
-                for dy in range(scale):
-                    row = rows[oy + 2 + y * scale + dy]
-                    for dx in range(scale):
-                        i = (ox + 2 + x * scale + dx) * 4
-                        row[i:i + 4] = colour
+    """pack.png, 64x64: one menu button as the client draws it - grey face, light top edge,
+    dark bottom edge - carrying a yellow ⚡ at 3x and two white bars where the label goes.
+    A picture of exactly what the pack changes."""
+    size = 64
+    rows = [bytearray(bytes((30, 32, 40, 255)) * size) for _ in range(size)]
+
+    def fill(x0, y0, x1, y1, colour):
+        for y in range(y0, y1):
+            for x in range(x0, x1):
+                rows[y][x * 4:x * 4 + 4] = bytes((*colour, 255))
+
+    bx0, by0, bx1, by1 = 4, 17, 60, 47          # the button: 56 x 30
+    fill(bx0, by0, bx1, by1, (108, 108, 108))    # face
+    fill(bx0, by0, bx1, by0 + 2, (160, 160, 160))  # light top edge
+    fill(bx0, by0, bx0 + 2, by1, (160, 160, 160))  # light left edge
+    fill(bx0, by1 - 3, bx1, by1, (46, 46, 46))     # dark bottom edge
+    fill(bx1 - 3, by0, bx1, by1, (46, 46, 46))     # dark right edge
+    fill(0, by1, size, by1 + 2, (0, 0, 0))         # drop shadow under the button
+
+    scale = 3
+    gx, gy = bx0 + 6, by0 + 5
+    for y, art in enumerate(table["⚡"]):
+        for x, px in enumerate(art):
+            if px == ".":
+                continue
+            v = SHADES[px] / 255
+            colour = (int(255 * v), int(255 * v), int(85 * v))
+            fill(gx + x * scale, gy + y * scale, gx + (x + 1) * scale, gy + (y + 1) * scale, colour)
+    fill(gx + 27, by0 + 8, bx1 - 7, by0 + 13, (240, 240, 240))  # label bars
+    fill(gx + 27, by0 + 17, bx1 - 14, by0 + 22, (240, 240, 240))
     return _png_encode(size, size, rows)
 
 
