@@ -98,6 +98,7 @@ def main():
           == [("up", "north"), ("up", "south")])
 
     main_panes()
+    main_floor_corner()
     main_holes()
     main_exhaustive()
 
@@ -523,11 +524,20 @@ def block_boxes(world, pos, t=1 / 16):
             mins[ax] = 1 - t if f in POS else 0.0
         return tuple(mins) + tuple(sizes)
 
+    def edge_drawn(where, a, b):
+        """The edge rule, for any block - the neighbours' lines matter, not just ours."""
+        g = world.get(where)
+        if g != glass:
+            return False
+        seen = {d: at(world, where, d) != g and at(world, where, d) != "solid" for d in DIRS}
+        is_same = {d: at(world, where, d) == g for d in DIRS}
+        return (seen[a] and not is_same[b]) or (seen[b] and not is_same[a])
+
     for a, b in EDGES:
         if (vis[a] and not same[b]) or (vis[b] and not same[a]):
             out.append(box([a, b]))
     for face in ALL_FACES:
-        if not vis[face]:
+        if same[face]:                    # the sheet carries on this way: no rim at all
             continue
         lat = LATERALS[AXIS[face]]
         for first in lat[:2]:
@@ -538,8 +548,47 @@ def block_boxes(world, pos, t=1 / 16):
                 diag = (pos[0] + d1[0] + d2[0], pos[1] + d1[1] + d2[1], pos[2] + d1[2] + d2[2])
                 if world.get(diag) == glass:
                     continue
+                # only where both lines actually arrive: the neighbour on each side drawing
+                # its own edge along this face. NOT whether this face is visible - a glass
+                # floor on stone has a hidden underside that still carries a rim.
+                one = (pos[0] + d1[0], pos[1] + d1[1], pos[2] + d1[2])
+                two = (pos[0] + d2[0], pos[1] + d2[1], pos[2] + d2[2])
+                if not edge_drawn(one, face, second) or not edge_drawn(two, face, first):
+                    continue
                 out.append(box([face, first, second]))
     return resolve(out)
+
+
+def main_floor_corner():
+    print("\na glass floor laid on stone, turning a corner")
+    # exactly what /glassrim gaps found at -7 70 43: an L of glass on stone, the
+    # inner corner of the L. Air above, stone below, glass north and west.
+    world = {(0, 0, 0): "glass", (0, 0, -1): "glass", (-1, 0, 0): "glass"}
+    for spot in list(world):
+        world[(spot[0], spot[1] - 1, spot[2])] = "solid"
+    boxes = block_boxes(world, (0, 0, 0))
+    T = 1 / 16
+    cubes = [b for b in boxes if max(b[3:]) <= T + 1e-9]
+    top = [b for b in cubes if abs(b[1] - (1 - T)) < 1e-9]
+    bottom = [b for b in cubes if abs(b[1]) < 1e-9]
+    check("the top of the inner corner is filled", len(top) == 1, f"{top}")
+    check("and so is the bottom, though stone hides that face",
+          len(bottom) == 1, f"{bottom}")
+    check("the bottom cube sits in the corner the two rims run into",
+          bottom and abs(bottom[0][0]) < 1e-9 and abs(bottom[0][2]) < 1e-9, f"{bottom}")
+
+    # Fill the notch with stone and the two faces change answer independently, which is
+    # the whole point of asking per line rather than per block: on top, both neighbours
+    # still draw a rim against the stone and those two lines still meet, so the cube
+    # stays; underneath, both of them have stone on the notch side AND stone below, so
+    # neither draws anything there and the cube would have nothing to join.
+    walled = dict(world)
+    walled[(-1, 0, -1)] = "solid"
+    cubes = [b for b in block_boxes(walled, (0, 0, 0)) if max(b[3:]) <= T + 1e-9]
+    check("a stone-filled notch keeps the top cube - two rims still run into it",
+          len([b for b in cubes if abs(b[1] - (1 - T)) < 1e-9]) == 1, f"{cubes}")
+    check("but not the bottom one - down there neither neighbour draws a rim",
+          not [b for b in cubes if abs(b[1]) < 1e-9], f"{cubes}")
 
 
 def main_holes():
