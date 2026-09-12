@@ -61,7 +61,7 @@ def bump(pack, part, note):
             readme.write_text(t.replace(f"{name}-{old}", f"{name}-{new}"), encoding="utf-8")
 
     changelog = HERE / "CHANGELOG.md"
-    entry = f"## {name} {new}\n\n{note.strip()}\n\n"
+    entry = f"## {name} {new}\n\n{note.strip()}\n"
     if changelog.exists():
         head, sep, rest = changelog.read_text(encoding="utf-8").partition("\n## ")
         changelog.write_text(head.rstrip("\n") + "\n\n" + entry + (sep + rest if sep else ""), encoding="utf-8")
