@@ -34,12 +34,25 @@ left-aligned in its cell (the client trims trailing empty columns to find the
 advance width, never leading ones). The client adds one pixel of spacing after
 each glyph on its own.
 
+Bars
+----
+A second sheet, `bars.png`, holds 21 progress bars at the private-use code
+points U+E000..U+E014: a 22x8 frame whose interior fills from the left in
+twenty steps (0 % to 100 % in 5 % steps), drawn in the same greys so the
+label colour tints it. These are NOT a fallback-safe override - a client
+without the pack draws a missing-glyph box for a private-use character - so
+the server only emits them for a player whose client reported this pack
+loaded (ServerMenus checks the Look Packs status per player and prints
+▰▰▰▱▱ otherwise). One glyph is one bar: TPS on the admin main, a Haunt
+category's weight, a player's health, the tier ladder.
+
 Building
 --------
 `python3 build.py` reads the vanilla `font/default.json` from the installed
 client jar (so the references to the vanilla providers are exactly the current
-ones - nothing of Mojang's is vendored), writes `src/`, `ServerUI-<v>.zip`
-and `preview.png` (the sheet at 6x on dark, for checking the art by eye).
+ones - nothing of Mojang's is vendored), writes `src/`, `ServerUI-<v>.zip`,
+`preview.png` (the icon sheet at 6x on dark, for checking the art by eye) and
+`preview-bars.png` (the bars the same way).
 """
 
 import binascii
@@ -51,7 +64,7 @@ import zipfile
 import zlib
 
 NAME = "ServerUI"
-VERSION = "1.0.1"         # bumped with ../bump.py, never by hand
+VERSION = "1.1.0"         # bumped with ../bump.py, never by hand
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
 DIST = HERE / "dist"
@@ -63,6 +76,11 @@ CELL = 8
 PER_ROW = 16
 # shade letters: '#' white, '+' light, '-' mid, '=' dark, '.' transparent
 SHADES = {"#": 255, "+": 200, "-": 140, "=": 85}
+
+# progress bars: 22 wide (1px frame + 20px interior), 21 fill states, private use area
+BAR_W = 22
+BAR_STATES = 20
+BAR_BASE = 0xE000
 
 # Every icon is at most 7 columns wide and 7 rows tall (rows 0-6); row 7 is the
 # descender line and stays empty so icons sit on the same baseline as letters.
@@ -675,6 +693,52 @@ def sheet(table):
     return _png_encode(w, h, rows), char_rows
 
 
+def bar_drawing(k):
+    """One bar with k of BAR_STATES interior columns filled: frame in mid grey, fill white, rest dim."""
+    frame = "-" * BAR_W
+    inner = "-" + "#" * k + "=" * (BAR_STATES - k) + "-"
+    return [frame] + [inner] * 6 + [frame]
+
+
+def bars():
+    """The bar sheet: one glyph per line so every cell is BAR_W wide; returns (png bytes, chars rows)."""
+    drawings = [bar_drawing(k) for k in range(BAR_STATES + 1)]
+    h = len(drawings) * CELL
+    rows = [bytearray(BAR_W * 4) for _ in range(h)]
+    for n, art in enumerate(drawings):
+        for y, line in enumerate(art):
+            for x, px in enumerate(line):
+                if px == ".":
+                    continue
+                v = SHADES[px]
+                rows[n * CELL + y][x * 4:x * 4 + 4] = bytes((v, v, v, 255))
+    chars = [chr(BAR_BASE + k) for k in range(BAR_STATES + 1)]
+    return _png_encode(BAR_W, h, rows), chars
+
+
+def preview_bars(scale=6):
+    """Every bar state at `scale` on dark, one under the other."""
+    drawings = [bar_drawing(k) for k in range(BAR_STATES + 1)]
+    pad = 2
+    w = (BAR_W + 2 * pad) * scale
+    h = len(drawings) * (CELL + pad) * scale + pad * scale
+    bg = bytes((32, 34, 40, 255))
+    rows = [bytearray(bg * w) for _ in range(h)]
+    for n, art in enumerate(drawings):
+        cy = (n * (CELL + pad) + pad) * scale
+        for y, line in enumerate(art):
+            for x, px in enumerate(line):
+                if px == ".":
+                    continue
+                v = SHADES[px]
+                for dy in range(scale):
+                    row = rows[cy + y * scale + dy]
+                    for dx in range(scale):
+                        i = ((x + pad) * scale + dx) * 4
+                        row[i:i + 4] = bytes((v, v, v, 255))
+    return _png_encode(w, h, rows)
+
+
 def preview(table, scale=6):
     """The sheet at `scale` on dark, one cell of padding, for looking at the art."""
     chars = list(table)
@@ -761,12 +825,18 @@ def build(version=None):
 
     png, char_rows = sheet(table)
     (tex_dir / "icons.png").write_bytes(png)
+    bars_png, bar_chars = bars()
+    (tex_dir / "bars.png").write_bytes(bars_png)
 
     providers, fmt, from_jar = vanilla_default_font()
-    ours = {"type": "bitmap", "file": "serverui:font/icons.png",
-            "height": CELL, "ascent": 7, "chars": char_rows}
+    ours = [
+        {"type": "bitmap", "file": "serverui:font/icons.png",
+         "height": CELL, "ascent": 7, "chars": char_rows},
+        {"type": "bitmap", "file": "serverui:font/bars.png",
+         "height": CELL, "ascent": 7, "chars": bar_chars},
+    ]
     (font_dir / "default.json").write_text(
-        json.dumps({"providers": [ours] + providers}, indent=2, ensure_ascii=False) + "\n",
+        json.dumps({"providers": ours + providers}, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8")
 
     # 26.x reads min_format/max_format; a pack with only pack_format plus the
@@ -782,6 +852,7 @@ def build(version=None):
     (SRC / "pack.png").write_bytes(pack_icon(table))
 
     (HERE / "preview.png").write_bytes(preview(table))
+    (HERE / "preview-bars.png").write_bytes(preview_bars())
     # the shipped zip lands next to this script (that is the URL the server hands out),
     # older versions go
     for old in HERE.glob(f"{NAME}-*.zip"):
@@ -801,7 +872,7 @@ def main():
     """Build and return the shipped zip - the contract ../build.py drives."""
     import hashlib
     out, count, from_jar = build()
-    print(f"  {out.name}: {count} glyphs, {out.stat().st_size} bytes, "
+    print(f"  {out.name}: {count} glyphs + {BAR_STATES + 1} bars, {out.stat().st_size} bytes, "
           f"sha1 {hashlib.sha1(out.read_bytes()).hexdigest()}"
           + ("" if from_jar else "  (client jar not found - vanilla providers assumed)"))
     return out

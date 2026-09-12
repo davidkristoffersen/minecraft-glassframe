@@ -15,6 +15,35 @@
       ]
     },
     {
+      "type": "bitmap",
+      "file": "serverui:font/bars.png",
+      "height": 8,
+      "ascent": 7,
+      "chars": [
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        "",
+        ""
+      ]
+    },
+    {
       "type": "reference",
       "id": "minecraft:include/space"
     },

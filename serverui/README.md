@@ -3,7 +3,7 @@
 Pixel icons for a Paper server's dialog menus, for Minecraft Java 26.2+, needing
 **no mods**. 2 KB.
 
-Download: [`ServerUI-1.0.1.zip`](ServerUI-1.0.1.zip)
+Download: [`ServerUI-1.1.0.zip`](ServerUI-1.1.0.zip)
 
 ## What it does
 
@@ -30,11 +30,21 @@ gold. One drawing serves every colour.
 Cells are 8x8 with `ascent` 7 - the vanilla letter grid. Icons fill rows 0-6,
 which is where capitals sit, so they align with the text beside them.
 
+## Bars
+
+A second sheet holds 21 progress bars at the private-use code points
+U+E000–U+E014: a 22x8 frame filling from the left in 5 % steps, tinted by the
+label colour like everything else. A client without the pack draws a box for a
+private-use character, so these are not a silent override: the server emits a
+bar only for a player whose client reported the pack loaded, and prints
+`▰▰▰▱▱` for everyone else. One glyph per bar: TPS, a Haunt category's weight, a
+player's health, the difficulty tier ladder.
+
 ## Building
 
 `python3 build.py` reads the vanilla `font/default.json` out of the installed
 client jar (so our provider goes in front of exactly the references the running
 version ships - nothing of Mojang's is vendored), then writes `src/`,
-`dist/ServerUI-<version>.zip` and `dist/preview.png`, the whole sheet at 6x for
-checking the art by eye. The art itself is the `ART` table in `build.py`: one
+`ServerUI-<version>.zip`, `preview.png` (the icon sheet at 6x for checking the
+art by eye) and `preview-bars.png`. The art itself is the `ART` table in `build.py`: one
 string per row, `#` `+` `-` `=` for four shades, `.` for transparent.

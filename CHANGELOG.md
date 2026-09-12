@@ -2,6 +2,10 @@
 
 One entry per published version, newest first.
 
+## ServerUI 1.1.0
+
+Progress bars: 21 glyphs at U+E000-U+E014 (a 22x8 frame filling in 5 % steps), emitted by ServerMenus only for clients that report the pack loaded - TPS, Haunt weights, player health, the tier ladder.
+
 ## GlassFrame 2.8.2
 
 Stained glass back to vanilla alpha - thinning the bars only uncovered the hole their opacity was hiding
