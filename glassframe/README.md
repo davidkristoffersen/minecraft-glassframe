@@ -4,7 +4,7 @@ Glass with no borders for Minecraft Java 26.2, needing **no mods**. A window or 
 floor reads as one clean sheet instead of a grid of outlined squares. Blocks and
 panes both.
 
-Download: [`GlassFrame-2.7.2-borderless.zip`](GlassFrame-2.7.2-borderless.zip) - 10 KB.
+Download: [`GlassFrame-2.8.0-borderless.zip`](GlassFrame-2.8.0-borderless.zip) - 10 KB.
 
 ## Why most connected-glass packs do nothing
 

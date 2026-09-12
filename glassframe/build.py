@@ -83,7 +83,7 @@ import zipfile
 
 PACK_FORMAT = 88          # 26.2, from the client's version.json
 NAME = "GlassFrame"
-VERSION = "2.7.2"         # bumped with ../bump.py, never by hand
+VERSION = "2.8.0"         # bumped with ../bump.py, never by hand
 
 HERE = pathlib.Path(__file__).parent
 SRC = HERE / "src"
@@ -253,6 +253,13 @@ def pane_template(spec):
 SPECK_ALPHA = 77         # out of 255, so 30% - blocks
 PANE_SPECK_ALPHA = 128   # 50% - panes, which need more to read the same
 
+# What the GlassRim bars keep of vanilla stained glass's own alpha. They are display
+# entities, so this texture is the only knob there is for how heavy the outline reads.
+BAR_ALPHA_SCALE = 0.65
+COLOURS_ALL = ["white", "orange", "magenta", "light_blue", "yellow", "lime", "pink",
+               "gray", "light_gray", "cyan", "purple", "blue", "brown", "green",
+               "red", "black"]
+
 # A pane is a far smaller piece of glass than a block face, so at equal alpha it
 # simply carries fewer flecks and all but disappears. Sampling the sprite more
 # densely would fix the count but shrink each fleck, so instead panes get their
@@ -361,11 +368,21 @@ def fade_specks(models_dir):
                     rows[y][x * 4 + 3] = ceiling
         (out / f"{name}.png").write_bytes(_png_encode(w, h, rows))
 
-    # Stained glass is shipped untouched. 2.6.0 thinned all sixteen of them because
-    # the GlassRim bars were made of stained glass and a display entity has no alpha
-    # of its own - but a translucent display is drawn before the water pass and cuts
-    # a hole in everything translucent behind it, so the bars are opaque concrete now
-    # and the only thing this ever faded was real stained glass in people's builds.
+    # And every stained glass, thinned. The GlassRim outline bars are display entities
+    # showing a stained glass block, and a display has no alpha of its own - the block's
+    # texture is the only place their weight can be set. At the bars' full 2px section
+    # vanilla's 40-61% reads as a rail rather than an outline, so the sixteen textures
+    # are reissued at BAR_ALPHA_SCALE of their own alpha. It reaches stained glass in a
+    # build as well, which is the price of the bars having no alpha to set.
+    with zipfile.ZipFile(CLIENT_JAR) as jar:
+        for colour in COLOURS_ALL:
+            sprite = f"{colour}_stained_glass"
+            w, h, rows = _png_decode(
+                jar.read(f"assets/minecraft/textures/block/{sprite}.png"))
+            for y in range(h):
+                for x in range(w):
+                    rows[y][x * 4 + 3] = int(rows[y][x * 4 + 3] * BAR_ALPHA_SCALE)
+            (out / f"{sprite}.png").write_bytes(_png_encode(w, h, rows))
     return True
 
 

@@ -2,6 +2,10 @@
 
 One entry per published version, newest first.
 
+## GlassFrame 2.8.0
+
+Stained glass thinned to 65% again - the GlassRim bars are made of it and are see-through once more
+
 ## ServerUI 1.0.1
 
 Pack icon: a menu button carrying a yellow ⚡ and a label, the thing the pack changes.
